@@ -6,7 +6,6 @@ import logging
 app = Flask(__name__)
 CORS(app)
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -23,31 +22,29 @@ def get_followers():
         if not username:
             return jsonify({'error': 'Username is required'}), 400
 
-        cdn_url = f'https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names={username}'
-        logger.info(f"Making request to: {cdn_url}")
+        # Use shields.io API instead of Twitter CDN
+        shields_url = f'https://img.shields.io/twitter/follow/{username}?label=Followers'
+        logger.info(f"Making request to: {shields_url}")
         
-        response = requests.get(cdn_url)
-        logger.info(f"CDN Response Status: {response.status_code}")
-        logger.info(f"CDN Response Content: {response.text}")
-
-        if response.status_code == 200 and response.text:  # Check if response is not empty
+        response = requests.get(shields_url)
+        logger.info(f"Shields.io Response Status: {response.status_code}")
+        
+        if response.status_code == 200:
+            # Extract follower count from shields.io response
             try:
-                data = response.json()
-                logger.info(f"Parsed data: {data}")
+                # The response contains SVG with follower count
+                content = response.text
+                # Extract number from response
+                import re
+                follower_count = re.search(r'>(\d+)<', content)
+                if follower_count:
+                    count = int(follower_count.group(1))
+                    logger.info(f"Found follower count: {count}")
+                    return jsonify({'followers_count': count})
+            except Exception as e:
+                logger.error(f"Error parsing shields.io response: {str(e)}")
                 
-                if data and len(data) > 0:
-                    follower_count = data[0]['followers_count']
-                    logger.info(f"Found follower count: {follower_count}")
-                    return jsonify({'followers_count': follower_count})
-                else:
-                    logger.error("Empty data array received")
-                    return jsonify({'error': 'No data found'}), 404
-            except ValueError as e:
-                logger.error(f"JSON parsing error: {str(e)}")
-                return jsonify({'error': 'Invalid response format'}), 500
-        else:
-            logger.error(f"Failed to fetch data. Status: {response.status_code}")
-            return jsonify({'error': 'Failed to fetch follower count'}), response.status_code
+        return jsonify({'error': 'Failed to fetch follower count'}), response.status_code
 
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
