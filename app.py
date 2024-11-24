@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import requests
+import subprocess
 import logging
 
 app = Flask(__name__)
@@ -9,9 +9,22 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@app.route('/')
-def home():
-    return jsonify({'status': 'API is running'})
+def get_follower_count_from_twitter(username):
+    try:
+        curl_command = f"curl https://twitter.com/{username} | grep 'data-count=\"' | awk -F '\"' '{{print $2}}'"
+        process = subprocess.Popen(
+            curl_command,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        output, error = process.communicate()
+        follower_count = output.decode('utf-8').strip()
+        logger.info(f"Raw follower count for {username}: {follower_count}")
+        return int(follower_count) if follower_count.isdigit() else 0
+    except Exception as e:
+        logger.error(f"Error getting follower count: {str(e)}")
+        return 0
 
 @app.route('/followers', methods=['POST'])
 def get_followers():
@@ -20,31 +33,12 @@ def get_followers():
         logger.info(f"Received request for username: {username}")
 
         if not username:
-            return jsonify({'error': 'Username is required'}), 400
+            return jsonify({'error': 'Username required'}), 400
 
-        # Use shields.io API instead of Twitter CDN
-        shields_url = f'https://img.shields.io/twitter/follow/{username}?label=Followers'
-        logger.info(f"Making request to: {shields_url}")
+        follower_count = get_follower_count_from_twitter(username)
+        logger.info(f"Found follower count for {username}: {follower_count}")
         
-        response = requests.get(shields_url)
-        logger.info(f"Shields.io Response Status: {response.status_code}")
-        
-        if response.status_code == 200:
-            # Extract follower count from shields.io response
-            try:
-                # The response contains SVG with follower count
-                content = response.text
-                # Extract number from response
-                import re
-                follower_count = re.search(r'>(\d+)<', content)
-                if follower_count:
-                    count = int(follower_count.group(1))
-                    logger.info(f"Found follower count: {count}")
-                    return jsonify({'followers_count': count})
-            except Exception as e:
-                logger.error(f"Error parsing shields.io response: {str(e)}")
-                
-        return jsonify({'error': 'Failed to fetch follower count'}), response.status_code
+        return jsonify({'followers_count': follower_count})
 
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
