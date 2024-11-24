@@ -10,6 +10,10 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@app.route('/')
+def home():
+    return jsonify({'status': 'API is running'})
+
 @app.route('/followers', methods=['POST'])
 def get_followers():
     try:
@@ -26,17 +30,24 @@ def get_followers():
         logger.info(f"CDN Response Status: {response.status_code}")
         logger.info(f"CDN Response Content: {response.text}")
 
-        if response.status_code == 200:
-            data = response.json()
-            logger.info(f"Parsed data: {data}")
-            
-            if data and len(data) > 0:
-                follower_count = data[0]['followers_count']
-                logger.info(f"Found follower count: {follower_count}")
-                return jsonify({'followers_count': follower_count})
-            
-        logger.error(f"Failed to fetch follower count. Status: {response.status_code}")
-        return jsonify({'error': 'Failed to fetch follower count'}), response.status_code
+        if response.status_code == 200 and response.text:  # Check if response is not empty
+            try:
+                data = response.json()
+                logger.info(f"Parsed data: {data}")
+                
+                if data and len(data) > 0:
+                    follower_count = data[0]['followers_count']
+                    logger.info(f"Found follower count: {follower_count}")
+                    return jsonify({'followers_count': follower_count})
+                else:
+                    logger.error("Empty data array received")
+                    return jsonify({'error': 'No data found'}), 404
+            except ValueError as e:
+                logger.error(f"JSON parsing error: {str(e)}")
+                return jsonify({'error': 'Invalid response format'}), 500
+        else:
+            logger.error(f"Failed to fetch data. Status: {response.status_code}")
+            return jsonify({'error': 'Failed to fetch follower count'}), response.status_code
 
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")
