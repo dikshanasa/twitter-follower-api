@@ -1,8 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import logging
-import requests
-import json
+from textblob import TextBlob
 
 app = Flask(__name__)
 CORS(app)
@@ -10,60 +9,41 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_follower_count_from_twitter(username):
+@app.route('/analyze', methods=['POST'])
+def analyze_sentiment():
     try:
-        headers = {
-            'Authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'x-guest-token': get_guest_token()
-        }
-        
-        url = f'https://api.twitter.com/graphql/SAMkL5y_N7rFLrb8WCbOtw/UserByScreenName?variables=%7B%22screen_name%22%3A%22{username}%22%2C%22withSafetyModeUserFields%22%3Atrue%7D'
-        
-        response = requests.get(url, headers=headers)
-        logger.info(f"Response status code: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            if 'data' in data and 'user' in data['data']:
-                followers = data['data']['user']['legacy']['followers_count']
-                logger.info(f"Found followers: {followers}")
-                return followers
-        return 0
-    except Exception as e:
-        logger.error(f"Error getting follower count: {str(e)}")
-        return 0
+        text = request.json.get('text')
+        if not text:
+            return jsonify({'error': 'Text required'}), 400
 
-def get_guest_token():
-    try:
-        response = requests.post(
-            'https://api.twitter.com/1.1/guest/activate.json',
-            headers={
-                'Authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA'
-            }
-        )
-        return response.json()['guest_token']
-    except Exception as e:
-        logger.error(f"Error getting guest token: {str(e)}")
-        return None
-
-@app.route('/followers', methods=['POST'])
-def get_followers():
-    try:
-        username = request.json.get('username')
-        logger.info(f"Received request for username: {username}")
-
-        if not username:
-            return jsonify({'error': 'Username required'}), 400
-
-        follower_count = get_follower_count_from_twitter(username)
-        logger.info(f"Found follower count for {username}: {follower_count}")
+        # Analyze sentiment using TextBlob
+        analysis = TextBlob(text)
         
-        return jsonify({'followers_count': follower_count})
+        # Get polarity score (-1 to 1)
+        score = analysis.sentiment.polarity
+        
+        # Get subjectivity
+        subjectivity = analysis.sentiment.subjectivity
+        
+        # Generate analysis text
+        analysis_text = self.generate_analysis_text(score, subjectivity)
+        
+        return jsonify({
+            'score': score,
+            'subjectivity': subjectivity,
+            'analysis': analysis_text
+        })
 
     except Exception as e:
-        logger.error(f"Error processing request: {str(e)}")
+        logger.error(f"Error analyzing sentiment: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def generate_analysis_text(score, subjectivity):
+    sentiment = "positive" if score > 0 else "negative" if score < 0 else "neutral"
+    confidence = "high" if abs(score) > 0.6 else "moderate" if abs(score) > 0.3 else "low"
+    tone = "very subjective" if subjectivity > 0.8 else "somewhat subjective" if subjectivity > 0.4 else "objective"
+    
+    return f"This tweet appears {sentiment} with {confidence} confidence. The tone is {tone}."
 
 if __name__ == '__main__':
     app.run(debug=True)
